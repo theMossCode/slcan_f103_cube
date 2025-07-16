@@ -42,13 +42,13 @@ uint32_t ring_write_ch(struct ring* ring, uint8_t ch)
 	uint8_t tmp;
 
 	next = ring->end + 1;
+	if(next >= ring->size){
+		next = 0;
+	}
+
 	if(next == ring->begin){
 		// Discard oldest
 		(void)ring_read_ch(ring, &tmp);
-	}
-
-	if(next >= ring->size){
-		next = 0;
 	}
 
 	ring->data[ring->end] = ch;
@@ -72,19 +72,18 @@ uint32_t ring_read_ch(struct ring* ring, uint8_t* ch)
 {
 	uint32_t next;
 
-	if(ring->begin != ring->end){
-		next = ring->begin + 1;
-		if(next >= ring->size){
-			next = 0;
-		}
-
-		*ch = ring->data[ring->begin];
-		ring->begin = next;
-
-		return 1;
+	next = ring->begin + 1;
+	if(next >= ring->size){
+		next = 0;
 	}
 
-	return 0;
+	if(ring->begin == ring->end){
+		return 0;
+	}
+
+	*ch = ring->data[ring->begin];
+	ring->begin = next;
+	return 1;
 }
 
 uint32_t ring_bytes_free(const struct ring* rb)

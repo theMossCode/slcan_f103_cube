@@ -66,7 +66,6 @@ CAN_HandleTypeDef hcan;
 
 UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_rx;
-DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
 
@@ -87,8 +86,8 @@ static void MX_CAN_Init(void);
 static struct ring input_ring;
 static struct ring output_ring;
 
-static uint8_t input_buf[256];
-static uint8_t rx_ch[512];
+static uint8_t input_buf[RING_BUFFER_SIZE];
+static uint8_t rx_ch[256];
 
 static uint16_t last_dma_pos;
 static uint16_t current_dma_pos;
@@ -153,11 +152,11 @@ static void put_hex(uint8_t c)
 //	(void)ring_write(&output_ring, s, 2);
 }
 
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-	(void)huart;
-//	uart_tx_busy = 0;
-}
+//void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+//{
+//	(void)huart;
+////	uart_tx_busy = 0;
+//}
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
@@ -193,7 +192,8 @@ static int uart_read_blocking(uint8_t *c)
 
 	// Wait for DMA data
 	do{
-		current_dma_pos = (uint16_t)((sizeof(rx_ch)/sizeof(rx_ch[0])) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx));
+		uint32_t dma_counter = __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
+		current_dma_pos = (uint16_t)(sizeof(rx_ch)/sizeof(rx_ch[0])) - dma_counter;
 		// Already data in buffer
 		if(ring_read_ch(&input_ring, c)){
 			rx_complete = 1;
@@ -474,8 +474,9 @@ static void dump_can_messages()
 
 //		uint8_t output_c;
 //		while(ring_read_ch(&output_ring, &output_c)){
-			while(HAL_DMA_GetState(&hdma_usart2_tx) == HAL_DMA_STATE_BUSY){;}
-			HAL_UART_Transmit_DMA(&huart2, tx_buf, tx_index);
+//			while(HAL_DMA_GetState(&hdma_usart2_tx) == HAL_DMA_STATE_BUSY){;}
+//			HAL_UART_Transmit_DMA(&huart2, tx_buf, tx_index);
+			HAL_UART_Transmit(&huart2, tx_buf, tx_index, HAL_MAX_DELAY);
 //		}
 
 		rx_active++;
@@ -697,29 +698,27 @@ int main(void)
 	DEBUG_PRINT("Start..");
 	can_speed(6);
 	while(HAL_UART_Receive_DMA(&huart2, rx_ch, sizeof(rx_ch)/sizeof(rx_ch[0])) != HAL_OK);
+
+	static uint8_t rsp;
 	while (1)
 	{
 		int slcan_ret;
-
 		slcan_ret = slcan_command();
-		static uint8_t rsp;
 		if(slcan_ret == 0){
 			rsp = '\r';
-			while(HAL_DMA_GetState(&hdma_usart2_tx) == HAL_DMA_STATE_BUSY){;}
-			HAL_UART_Transmit_DMA(&huart2, &rsp, 1);
+//			while(HAL_DMA_GetState(&hdma_usart2_tx) == HAL_DMA_STATE_BUSY){;}
+//			HAL_UART_Transmit_DMA(&huart2, &rsp, 1);
+			HAL_UART_Transmit(&huart2, &rsp, 1, HAL_MAX_DELAY);
 		}
 		else if(slcan_ret == -1){
-			// TX mailbox full
-//			(void)ring_write_ch(&output_ring, 0x07);
 			rsp = 0x07;
-			while(HAL_DMA_GetState(&hdma_usart2_tx) == HAL_DMA_STATE_BUSY){;}
-			HAL_UART_Transmit_DMA(&huart2, &rsp, 1);
+//			while(HAL_DMA_GetState(&hdma_usart2_tx) == HAL_DMA_STATE_BUSY){;}
+//			HAL_UART_Transmit_DMA(&huart2, &rsp, 1);
+			HAL_UART_Transmit(&huart2, &rsp, 1, HAL_MAX_DELAY);
 			HAL_CAN_AbortTxRequest(&hcan, CAN_TX_MAILBOX0 | CAN_TX_MAILBOX1 | CAN_TX_MAILBOX2);
 		}
 
 		dump_can_messages();
-
-
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -848,9 +847,6 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
-  /* DMA1_Channel7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
 
 }
 
@@ -911,8 +907,7 @@ void Error_Handler(void)
 	}
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
